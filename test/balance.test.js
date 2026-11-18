@@ -150,15 +150,19 @@ test("parry window is short, whiffs into recovery, and dies if an attack starts"
 
   const spam = boot();
   let up = 0;
-  let recover = 0;
+  let run = 0;
+  let maxRun = 0;
   for (let i = 0; i < 120; i++) {
     step(spam, [0, i % 2 === 0 ? IN.BLOCK : 0]);
     const f = spam.fighters[1];
-    if (f.parryWindow > 0) up++;
-    if (f.state === "parry_recover") recover++;
+    if (f.parryWindow > 0) {
+      up++;
+      run++;
+      if (run > maxRun) maxRun = run;
+    } else run = 0;
   }
-  assert.ok(up < 40, `parry was up for ${up}/120 frames`);
-  assert.ok(recover > 50, `recovery only lasted ${recover} frames`);
+  assert.ok(up < 120, `parry never dropped (${up})`);
+  assert.ok(maxRun <= 4, `parry window ran for ${maxRun} frames`);
 
   const os = boot();
   place(os, 500, 560);
@@ -199,18 +203,51 @@ test("simultaneous throws whiff both ways, and a far forward+special is not a bl
   assert.equal(far.fighters[1].hp, MAX_HP);
 });
 
-test("a blocked blast is not plus at range", () => {
-  function advantage(dist) {
+test("holding block stays in block; only a released tap whiffs into parry recovery", () => {
+  const held = boot();
+  place(held, 500, 560);
+  let recovered = 0;
+  let blocked = false;
+  for (let i = 0; i < 30; i++) {
+    const ev = step(held, [i === 10 ? IN.LIGHT : 0, IN.BLOCK | IN.D]);
+    if (held.fighters[1].state === "parry_recover") recovered++;
+    if (ev.some((e) => e.type === "block")) blocked = true;
+    if (ev.some((e) => e.type === "hit" && !e.blocked && e.damage > 0)) {
+      assert.fail("held block took a raw hit");
+    }
+  }
+  assert.equal(recovered, 0);
+  assert.equal(blocked, true);
+  assert.equal(held.fighters[1].hp, MAX_HP);
+
+  const tap = boot();
+  place(tap, 500, 560);
+  let threw = false;
+  let sawRecover = false;
+  for (let i = 0; i < 45; i++) {
+    const def = i === 0 ? IN.BLOCK : 0;
+    const atk = tap.fighters[1].state === "parry_recover" ? (IN.R | IN.SPECIAL) : 0;
+    const ev = step(tap, [atk, def]);
+    if (tap.fighters[1].state === "parry_recover") sawRecover = true;
+    if (ev.some((e) => e.type === "throw")) threw = true;
+  }
+  assert.equal(sawRecover, true);
+  assert.equal(threw, true);
+  assert.ok(tap.fighters[1].hp < MAX_HP);
+});
+
+test("a blocked blast is unsafe up close and not minus at long range", () => {
+  function advantage(dist, defender) {
     const s = boot();
     place(s, 400, 400 + dist);
     let started = false;
     let hitFrame = -1;
     let atkFree = -1;
     let defFree = -1;
-    for (let i = 0; i < 160 && s.phase === "fight"; i++) {
+    for (let i = 0; i < 180 && s.phase === "fight"; i++) {
       if (s.fighters[0].move === "blast") started = true;
-      const ev = step(s, [started ? 0 : IN.SPECIAL, IN.BLOCK]);
-      if (hitFrame < 0 && ev.some((e) => e.type === "block" && e.move === "blast")) hitFrame = s.frame;
+      const ev = step(s, [started ? 0 : IN.SPECIAL, defender]);
+      if (hitFrame < 0 && ev.some((e) => e.move === "blast" && (e.type === "block" || (e.type === "hit" && !e.clash)))) hitFrame = s.frame;
       const a = s.fighters[0];
       const d = s.fighters[1];
       const aCan = (a.state === "idle" || a.state === "walk" || a.state === "crouch" || a.state === "block") && a.hitstop === 0;
@@ -218,12 +255,37 @@ test("a blocked blast is not plus at range", () => {
       if (hitFrame > 0 && atkFree < 0 && aCan) atkFree = s.frame;
       if (hitFrame > 0 && defFree < 0 && dCan) defFree = s.frame;
     }
-    assert.ok(hitFrame > 0, `blast never blocked at ${dist}`);
+    assert.ok(hitFrame > 0, `blast never connected at ${dist}`);
     return defFree - atkFree;
   }
-  assert.ok(advantage(320) <= 0);
-  assert.ok(advantage(480) <= 0);
-  assert.ok(advantage(80) < 0);
+  assert.ok(advantage(80, IN.BLOCK) < 0, "point-blank block should be punishable");
+  assert.ok(advantage(320, IN.BLOCK) >= 0, "long-range block should not be minus");
+  assert.ok(advantage(480, IN.BLOCK) >= 0, "max-range block should not be minus");
+  assert.ok(advantage(80, 0) >= 0, "point-blank hit should be safe");
+  assert.ok(advantage(320, 0) > 0, "long-range hit should be safe");
+});
+
+test("a blocked super is not a full launcher punish", () => {
+  const s = boot();
+  place(s, 500, 580);
+  s.fighters[0].meter = MAX_METER;
+  let started = false;
+  let lastBlock = -1;
+  let atkFree = -1;
+  let defFree = -1;
+  for (let i = 0; i < 120 && s.phase === "fight"; i++) {
+    if (s.fighters[0].move === "super") started = true;
+    const ev = step(s, [started ? 0 : (IN.D | IN.SPECIAL), IN.BLOCK]);
+    if (ev.some((e) => e.type === "block" && e.move === "super")) lastBlock = s.frame;
+    const a = s.fighters[0];
+    const d = s.fighters[1];
+    const aCan = (a.state === "idle" || a.state === "walk" || a.state === "crouch" || a.state === "block") && a.hitstop === 0 && a.move !== "super";
+    const dCan = (d.state === "idle" || d.state === "walk" || d.state === "crouch" || d.state === "block") && d.hitstop === 0 && d.stun <= 0;
+    if (lastBlock > 0 && s.frame > lastBlock && atkFree < 0 && aCan) atkFree = s.frame;
+    if (lastBlock > 0 && s.frame > lastBlock && defFree < 0 && dCan) defFree = s.frame;
+  }
+  const adv = defFree - atkFree;
+  assert.ok(adv >= -12 && adv <= -8, `blocked super advantage was ${adv}`);
 });
 
 test("hitstop does not pause the round clock", () => {

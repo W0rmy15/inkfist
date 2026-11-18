@@ -122,7 +122,7 @@ export const MOVES = {
     hitbox: hb(-20, -48, 84, 96),
   },
   blast: {
-    weight: "special", startup: 12, active: 0, recovery: 51,
+    weight: "special", startup: 12, active: 0, recovery: 19,
     damage: 0, hitstun: 0, blockstun: 0, meter: 40, chip: 0,
     knockX: 0, knockY: 0, blockPush: 0, level: "high",
     spawn: 11,
@@ -138,7 +138,7 @@ export const MOVES = {
     hitbox: hb(0, 0, 0, 0),
   },
   super: {
-    weight: "super", startup: 12, active: 46, recovery: 18,
+    weight: "super", startup: 12, active: 46, recovery: 10,
     damage: 650, hitstun: 20, blockstun: 14, meter: 0, chip: 80,
     knockX: 40, knockY: 220, blockPush: 36, level: "mid",
     unblockable: false, launcher: true,
@@ -599,8 +599,8 @@ function spawnBlast(state, f, events) {
     owner: f.id,
     x,
     y,
-    vx: f.facing * 9 * SUB,
-    life: 75,
+    vx: f.facing * 6 * SUB,
+    life: 120,
   });
   events.push(makeEvent(state, "projectile_fire", f.id, px(x), px(y), { move: "blast" }));
 }
@@ -669,7 +669,8 @@ function updateFighter(state, f, foe, input, pressed, events, started, clash) {
     f.parryWindow = 4;
   } else if (f.parryWindow > 0) {
     f.parryWindow--;
-    if (f.parryWindow === 0 && (f.state === "idle" || f.state === "walk" || f.state === "crouch" || f.state === "block")) {
+    // A held block stays a block. Recovery is only for a tap that was let go.
+    if (f.parryWindow === 0 && !(input & IN.BLOCK) && (f.state === "idle" || f.state === "walk" || f.state === "crouch" || f.state === "block")) {
       f.state = "parry_recover";
       f.stun = 15;
       f.stateFrame = 0;
