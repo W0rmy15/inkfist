@@ -122,7 +122,7 @@ export const MOVES = {
     hitbox: hb(-20, -48, 84, 96),
   },
   blast: {
-    weight: "special", startup: 12, active: 0, recovery: 20,
+    weight: "special", startup: 12, active: 0, recovery: 51,
     damage: 0, hitstun: 0, blockstun: 0, meter: 40, chip: 0,
     knockX: 0, knockY: 0, blockPush: 0, level: "high",
     spawn: 11,
@@ -139,16 +139,16 @@ export const MOVES = {
   },
   super: {
     weight: "super", startup: 12, active: 46, recovery: 18,
-    damage: 1000, hitstun: 20, blockstun: 1, meter: 0, chip: 0,
-    knockX: 40, knockY: 220, blockPush: 0, level: "mid",
-    unblockable: true, launcher: true,
+    damage: 650, hitstun: 20, blockstun: 14, meter: 0, chip: 80,
+    knockX: 40, knockY: 220, blockPush: 36, level: "mid",
+    unblockable: false, launcher: true,
     cancel: [],
     hitbox: hb(-20, 0, 180, 160),
   },
 };
 
 const BLAST_HIT = {
-  move: "blast", weight: "special", damage: 1000, hitstun: 20, blockstun: 13,
+  move: "blast", weight: "special", damage: 1000, hitstun: 20, blockstun: 8,
   meter: 90, chip: 90, knockX: 70, knockY: 0, blockPush: 56, level: "high",
   unblockable: false,
 };
@@ -348,7 +348,8 @@ function pickMove(f, foe, buffer) {
   if (!air && f.meter >= MAX_METER && (buffer & IN.SPECIAL) && ((buffer & IN.HEAVY) || d.down)) {
     return "super";
   }
-  if (!air && (buffer & IN.SPECIAL) && d.fwd && Math.abs(f.x - foe.x) <= GRAB_RANGE && foe.y < 28 * SUB && foe.invuln <= 0 && foe.state !== "hitstun" && foe.state !== "knockdown" && foe.state !== "tumble" && foe.state !== "thrown" && foe.state !== "ko" && foe.state !== "parry_stun" && foe.state !== "super") {
+  // Forward+special is always a throw. Out of range it whiffs; it does not turn into a blast.
+  if (!air && (buffer & IN.SPECIAL) && d.fwd && !d.down && !(buffer & IN.HEAVY)) {
     return "throw";
   }
   if (air) {
@@ -395,9 +396,10 @@ function startMove(state, f, foe, name, events, started) {
   f.react = "";
   f.vx = 0;
   f.locked = name === "super";
+  f.parryWindow = 0;
   if (name === "super") {
     f.meter = 0;
-    f.invuln = 16;
+    f.invuln = 8;
     state.ink = 110;
     const b = bodyPoint(f);
     events.push(makeEvent(state, "super_charge", f.id, b.x, b.y, { move: "super" }));
@@ -511,14 +513,20 @@ function airDash(state, f, input, events) {
   events.push(makeEvent(state, "dash", f.id, px(f.x), px(f.y), { dir: rel }));
 }
 
-function tickThrow(state, f, foe, events, started) {
+function tickThrow(state, f, foe, events, started, clash) {
   if (!started.has(f.id)) f.moveFrame++;
   const mv = MOVES.throw;
   if (f.throwPhase === 0 && f.moveFrame === mv.startup) {
-    const legal = foe.invuln <= 0
+    // Same-frame (or still-in-startup) throws tech. Both whiff. Update order must not give it to P0.
+    const foeThrowing = foe.state === "throw" && foe.throwPhase === 0;
+    if (foeThrowing || clash.throw) {
+      f.throwPhase = -1;
+      clash.throw = true;
+    }
+    const legal = f.throwPhase === 0 && foe.invuln <= 0
       && foe.state !== "hitstun" && foe.state !== "knockdown" && foe.state !== "tumble"
       && foe.state !== "thrown" && foe.state !== "ko" && foe.state !== "parry_stun"
-      && foe.state !== "super" && foe.y < 28 * SUB
+      && foe.state !== "super" && foe.state !== "throw" && foe.y < 28 * SUB
       && Math.abs(f.x - foe.x) <= GRAB_RANGE;
     if (legal) {
       f.throwPhase = 1;
@@ -625,7 +633,7 @@ function tickAttack(state, f, foe, events, started) {
     events.push(makeEvent(state, "super_start", f.id, b.x, b.y, { move: "super" }));
   }
   if (f.move === "super" && f.moveFrame === 12) {
-    if (Math.abs(foe.x - f.x) < 480 * SUB && foe.state !== "ko") {
+    if (Math.abs(foe.x - f.x) <= 140 * SUB && foe.state !== "ko") {
       const face = foe.x >= f.x ? 1 : -1;
       f.facing = face;
       f.x = foe.x - face * 70 * SUB;
@@ -653,12 +661,22 @@ function tickStun(f) {
   }
 }
 
-function updateFighter(state, f, foe, input, pressed, events, started) {
+function updateFighter(state, f, foe, input, pressed, events, started, clash) {
   if (f.invuln > 0) f.invuln--;
   if (f.dashTimer > 0) f.dashTimer--;
-  const groundish = f.state === "idle" || f.state === "walk" || f.state === "crouch" || f.state === "block" || f.state === "dash" || f.state === "jumpsquat" || f.state === "parry";
-  if ((pressed & IN.BLOCK) && groundish && f.y <= 0) f.parryWindow = 8;
-  else if (f.parryWindow > 0) f.parryWindow--;
+  const canParry = (f.state === "idle" || f.state === "walk" || f.state === "crouch" || f.state === "block") && f.parryWindow === 0;
+  if ((pressed & IN.BLOCK) && canParry && f.y <= 0) {
+    f.parryWindow = 4;
+  } else if (f.parryWindow > 0) {
+    f.parryWindow--;
+    if (f.parryWindow === 0 && (f.state === "idle" || f.state === "walk" || f.state === "crouch" || f.state === "block")) {
+      f.state = "parry_recover";
+      f.stun = 15;
+      f.stateFrame = 0;
+      f.vx = 0;
+      f.blocking = false;
+    }
+  }
 
   if (f.state === "ko" || f.state === "win") {
     f.stateFrame++;
@@ -669,8 +687,19 @@ function updateFighter(state, f, foe, input, pressed, events, started) {
     f.stateFrame++;
     return;
   }
+  if (f.state === "parry_recover") {
+    f.stateFrame++;
+    f.stun--;
+    f.vx = 0;
+    f.parryWindow = 0;
+    // A whiffed parry cannot be refreshed or cancelled into a button, but holding block still blocks.
+    f.blocking = (input & IN.BLOCK) !== 0 && f.y <= 0;
+    f.crouch = (input & IN.D) !== 0 && f.y <= 0;
+    if (f.stun <= 0) f.state = f.blocking ? "block" : (f.crouch ? "crouch" : "idle");
+    else return;
+  }
   if (f.state === "throw") {
-    if (tickThrow(state, f, foe, events, started)) return;
+    if (tickThrow(state, f, foe, events, started, clash)) return;
   }
   if (f.state === "attack" || f.state === "super") {
     if (tickAttack(state, f, foe, events, started)) return;
@@ -840,7 +869,7 @@ function overlap(a, b) {
 }
 
 function immune(f) {
-  return f.invuln > 0 || f.state === "ko" || f.state === "thrown";
+  return f.invuln > 0 || f.state === "ko" || f.state === "thrown" || f.state === "knockdown";
 }
 
 function checkBlock(def, spec) {
@@ -882,7 +911,7 @@ function dealDamage(state, atk, def, spec, events) {
   const dirX = atk.facing;
   const dirY = spec.spike ? -1 : (spec.knockY > 0 || spec.launcher ? 1 : 0);
 
-  if (def.parryWindow > 0 && !spec.unblockable && spec.move !== "throw" && spec.weight !== "super") {
+  if (def.parryWindow > 0 && !spec.unblockable && spec.move !== "throw") {
     def.parryWindow = 0;
     atk.state = "parry_stun";
     atk.stun = 30;
@@ -976,7 +1005,7 @@ function dealDamage(state, atk, def, spec, events) {
     def.pendingWall = false;
     def.state = "hitstun";
     if (def.y < SUB) def.y = SUB;
-  } else if (spec.slam || spec.knockdown) {
+  } else if (spec.slam || (spec.knockdown && !wasAir && def.juggle <= 0)) {
     def.state = "hitstun";
     def.forceKD = true;
     def.bounceOnLand = false;
@@ -985,13 +1014,15 @@ function dealDamage(state, atk, def, spec, events) {
     def.airborne = true;
     if (def.y < SUB) def.y = SUB;
     def.pendingWall = false;
-  } else if (spec.launcher || wasAir) {
+    def.juggle = 1;
+  } else if (spec.knockdown || spec.launcher || wasAir) {
     def.juggle += 1;
-    if (def.juggle > 5 && !spec.launcher) {
+    if (def.juggle > 4) {
       def.vy = -8 * SUB;
       def.vx = atk.facing * 30;
       def.bounceOnLand = false;
       def.pendingWall = false;
+      def.forceKD = true;
       def.airborne = true;
       def.state = "hitstun";
       def.stun = Math.min(def.stun, 14);
@@ -1065,16 +1096,16 @@ function resolveHits(state, events) {
         spec: {
           move: "super",
           weight: "super",
-          damage: 1000,
+          damage: 650,
           hitstun: finisher ? 44 : 18,
-          blockstun: 8,
+          blockstun: 14,
           meter: 0,
-          chip: 0,
+          chip: 80,
           knockX: 48,
           knockY: finisher ? 220 : 0,
-          blockPush: 0,
+          blockPush: 36,
           level: "mid",
-          unblockable: true,
+          unblockable: false,
           cinematic: !finisher,
           finisher,
           launcher: finisher,
@@ -1464,6 +1495,10 @@ export function step(state, inputs) {
   if (freezing) {
     if (A.hitstop > 0) A.hitstop--;
     if (B.hitstop > 0) B.hitstop--;
+    if (state.phase === "fight") {
+      state.roundTime--;
+      if (state.roundTime <= 0) timeOver(state, events);
+    }
     state.frame++;
     return events;
   }
@@ -1474,8 +1509,9 @@ export function step(state, inputs) {
     if (state.combo.timer <= 0) state.combo = null;
   }
 
-  updateFighter(state, A, B, masks[0], pressed0, events, started);
-  updateFighter(state, B, A, masks[1], pressed1, events, started);
+  const clash = { throw: false };
+  updateFighter(state, A, B, masks[0], pressed0, events, started, clash);
+  updateFighter(state, B, A, masks[1], pressed1, events, started, clash);
   physics(state, events);
   if (state.phase === "fight") resolveHits(state, events);
   if (state.phase === "fight") stepProjectiles(state, events);
