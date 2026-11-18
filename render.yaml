@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: dust-rite
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: TRUST_CF
+        value: "1"

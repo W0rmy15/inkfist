@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dust Rite</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <canvas id="view" aria-label="Dust Rite fight"></canvas>
+
+  <aside id="panel">
+    <section id="screen-home">
+      <p class="eyebrow">Online stick bout</p>
+      <h1>Dust<br><span>Rite</span></h1>
+      <p class="lede">Two fighters, one ruined sky. Make a room and send the code, or take a quick match. Best of three.</p>
+      <label class="field">Name
+        <input id="name" maxlength="14" autocomplete="nickname" placeholder="What they shout">
+      </label>
+      <div class="actions">
+        <button id="create" class="primary" type="button">Create room</button>
+        <button id="quick" type="button">Quick match</button>
+        <form id="join-form" class="join">
+          <input id="code" maxlength="4" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="Room code">
+          <button type="submit">Join</button>
+        </form>
+        <button id="practice" type="button">Practice vs CPU</button>
+        <button id="show-controls" class="ghost" type="button">Controls</button>
+      </div>
+      <p id="status" class="status">Connecting…</p>
+    </section>
+
+    <section id="screen-room" hidden>
+      <p class="eyebrow">Room</p>
+      <p id="room-code" class="code">----</p>
+      <p class="lede">Send this link. The other player opens it and the round starts.</p>
+      <label class="field">Link
+        <input id="room-link" readonly>
+      </label>
+      <div class="actions">
+        <button id="copy" class="primary" type="button">Copy link</button>
+        <button id="room-leave" class="ghost" type="button">Leave room</button>
+      </div>
+      <p id="room-status" class="status">Waiting for an opponent…</p>
+    </section>
+
+    <section id="screen-controls" hidden>
+      <p class="eyebrow">Hands</p>
+      <h2>How to hit</h2>
+      <ul class="moves">
+        <li><b>A D</b> or arrows walk. <b>W</b> jumps — tap for a short hop, hold for a full one. <b>S</b> crouches.</li>
+        <li><b>Shift</b> dashes. Hold back to backdash. In the air, dash toward the stick; <b>up+Shift</b> chases a launch.</li>
+        <li><b>J</b> light. J, J, J is a string. Forward+J is a kick.</li>
+        <li><b>K</b> launcher uppercut. Down+K is a sweep. Forward+K carries them into the wall.</li>
+        <li><b>L</b> energy blast. Crouch under it. Forward+L up close is a throw. Down+L, or K+L, spends a full meter on the super.</li>
+        <li><b>I</b> blocks. Tap it as the hit connects to parry.</li>
+        <li>In the air, J and K juggle. Down+K spikes — they bounce off the ground.</li>
+        <li>After the launcher connects, press <b>W</b> to jump-cancel and follow.</li>
+      </ul>
+      <p class="gamepad">Gamepad: stick or d-pad to move, A light, B heavy, X special, Y or LB block, RB dash.</p>
+      <button id="controls-back" class="primary" type="button">Back</button>
+    </section>
+  </aside>
+
+  <div id="banner" hidden>
+    <div class="banner-card">
+      <p class="eyebrow" id="banner-kicker">Connection</p>
+      <h2 id="banner-title">Reconnecting</h2>
+      <p id="banner-body"></p>
+      <button id="banner-lobby" type="button" hidden>Back to lobby</button>
+    </div>
+  </div>
+
+  <div id="dock" hidden>
+    <button id="rematch" type="button" hidden>Rematch</button>
+    <button id="mute" type="button">Sound on</button>
+    <button id="leave" type="button">Leave</button>
+  </div>
+
+  <div id="touch" hidden>
+    <button type="button" data-bit="1">Left</button>
+    <button type="button" data-bit="2">Right</button>
+    <button type="button" data-bit="4">Jump</button>
+    <button type="button" data-bit="8">Crouch</button>
+    <button type="button" data-bit="256">Dash</button>
+    <button type="button" data-bit="16">Light</button>
+    <button type="button" data-bit="32">Heavy</button>
+    <button type="button" data-bit="64">Special</button>
+    <button type="button" data-bit="128">Block</button>
+  </div>
+
+  <pre id="debug" hidden></pre>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
